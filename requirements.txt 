@@ -1,9 +1,9 @@
 streamlit
-opencv-python
-pandas
-numpy
+streamlit-webrtc
+opencv-python-headless
 facenet-pytorch
 torch
+pandas
+numpy
 Pillow
-streamlit-webrtc
 scipy
