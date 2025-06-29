@@ -1,96 +1,62 @@
 import streamlit as st
-import cv2
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import av
 import numpy as np
-from PIL import Image
-import torch
 from scipy.spatial.distance import cosine
-import os
+from PIL import Image
 import json
-from helpers.db_utils import load_students, log_attendance
 from helpers.face_utils import get_face_embedding
+from helpers.db_utils import load_students, log_attendance
 
-st.set_page_config(page_title="Mark Attendance")
+THRESHOLD = 0.55
 
-st.title("🟢 Mark Attendance - Face Recognition")
+st.title("📸 Mark Attendance (Webcam)")
 
-THRESHOLD = 0.55  # lower is more strict; tune this
-
-# Load registered students
 students_df = load_students()
 
-def match_face(input_embedding, student_data):
-    min_score = float('inf')
-    matched_student = None
+# Video stream + capture logic
+class FaceScan(VideoTransformerBase):
+    def __init__(self):
+        self.latest_frame = None
 
-    for _, row in student_data.iterrows():
-        known_emb = np.array(json.loads(row["Embedding"]))
-        score = cosine(input_embedding, known_emb)
+    def transform(self, frame: av.VideoFrame):
+        img = frame.to_ndarray(format="bgr24")
+        self.latest_frame = img
+        return img
 
-        if score < min_score:
-            min_score = score
-            matched_student = row
+ctx = webrtc_streamer(
+    key="attendance",
+    video_transformer_factory=FaceScan,
+    media_stream_constraints={"video": True, "audio": False}
+)
 
-    if min_score < THRESHOLD:
-        return matched_student, min_score
-    else:
-        return None, min_score
+if ctx.video_transformer:
+    if st.button("✅ Scan Face and Mark Attendance"):
+        frame = ctx.video_transformer.latest_frame
+        if frame is not None:
+            # Save frame temporarily
+            temp_path = "data/temp_face.jpg"
+            Image.fromarray(frame).save(temp_path)
 
-# Webcam Capture
-def capture_face_image():
-    cap = cv2.VideoCapture(0)
-    st.info("📸 Press 's' to scan face, 'q' to cancel")
-    captured_img = None
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            st.warning("❌ Failed to access webcam.")
-            break
-
-        cv2.imshow("Press 's' to scan | 'q' to cancel", frame)
-        key = cv2.waitKey(1)
-
-        if key == ord('s'):
-            captured_img = frame
-            break
-        elif key == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-    return captured_img
-
-
-# Start Attendance Process
-if st.button("📸 Start Face Scan"):
-    st.info("Opening webcam...")
-    frame = capture_face_image()
-
-    if frame is not None:
-        # Save temp file
-        tmp_path = "data/temp_scan.jpg"
-        cv2.imwrite(tmp_path, frame)
-
-        embedding = get_face_embedding(tmp_path)
-
-        if embedding is None:
-            st.error("⚠️ Face not detected. Please try again.")
-        else:
-            matched_student, score = match_face(embedding, students_df)
-
-            if matched_student is not None:
-                name = matched_student["Name"]
-                matric = matched_student["Matric No"]
-                st.success(f"✅ {name} identified (Matric: {matric})")
-                st.write(f"Cosine Similarity Score: `{score:.4f}`")
-
-                # Log attendance
-                log_attendance(name, matric)
-                st.success("🕒 Attendance marked successfully!")
-
-                st.image(matched_student["Image Path"], caption="Matched Student", width=250)
-
+            emb = get_face_embedding(temp_path)
+            if emb is None:
+                st.warning("⚠️ Face not detected.")
             else:
-                st.warning("❌ No match found. Face not recognized.")
-    else:
-        st.warning("No image captured.")
+                min_dist = float('inf')
+                matched_student = None
+
+                for _, row in students_df.iterrows():
+                    known_emb = np.array(json.loads(row["Embedding"]))
+                    dist = cosine(emb, known_emb)
+                    if dist < min_dist:
+                        min_dist = dist
+                        matched_student = row
+
+                if min_dist < THRESHOLD:
+                    name = matched_student["Name"]
+                    matric = matched_student["Matric No"]
+                    st.success(f"✅ Matched: {name} ({matric}) | Score: {min_dist:.4f}")
+                    st.image(matched_student["Image Path"], caption="Matched Face", width=300)
+                    log_attendance(name, matric)
+                else:
+                    st.error(f"❌ No match found. Closest score: {min_dist:.4f}")
