@@ -1,70 +1,65 @@
 import streamlit as st
-import cv2
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import av
 import numpy as np
 from PIL import Image
 import os
 import uuid
 from helpers.face_utils import get_face_embedding
-from helpers.db_utils import register_student, load_students
+from helpers.db_utils import register_student
 
-# Directories
+# Constants
 FACES_DIR = "data/faces"
 os.makedirs(FACES_DIR, exist_ok=True)
 
-# --- Webcam image capture ---
-def capture_image_from_webcam():
-    cap = cv2.VideoCapture(0)
-    st.info("📸 Press 's' to capture, 'q' to cancel")
-    captured_img = None
+# Global capture state
+st.session_state['captured_face'] = None
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            st.warning("⚠️ Cannot read from webcam.")
-            break
+# Face capture transformer
+class FaceCapture(VideoTransformerBase):
+    def __init__(self):
+        self.frame = None
 
-        cv2.imshow("Press 's' to save | 'q' to quit", frame)
-        key = cv2.waitKey(1)
+    def transform(self, frame: av.VideoFrame):
+        img = frame.to_ndarray(format="bgr24")
+        self.frame = img
+        return img
 
-        if key == ord('s'):
-            captured_img = frame
-            break
-        elif key == ord('q'):
-            break
+# Streamlit form
+st.title("🎓 Student Registration (Webcam - Streamlit Compatible)")
 
-    cap.release()
-    cv2.destroyAllWindows()
-    return captured_img
-
-# --- Streamlit UI ---
-st.set_page_config(page_title="Student Registration", layout="centered")
-st.title("🎓 Student Registration - Face Attendance System")
-
-with st.form("register_form"):
+with st.form("registration_form"):
     name = st.text_input("Full Name")
-    matric = st.text_input("Matric Number")
-    dept = st.text_input("Department")
-    submit = st.form_submit_button("Register Student")
+    matric_no = st.text_input("Matric Number")
+    department = st.text_input("Department")
+    submitted = st.form_submit_button("Register")
 
-if submit:
-    if name and matric and dept:
-        st.info("Opening webcam... Please allow access.")
-        img = capture_image_from_webcam()
-
-        if img is not None:
-            file_name = f"{uuid.uuid4().hex}.jpg"
-            file_path = os.path.join(FACES_DIR, file_name)
-            cv2.imwrite(file_path, img)
-
-            embedding = get_face_embedding(file_path)
-
-            if embedding is not None:
-                register_student(name, matric, dept, file_path, embedding.tolist())
-                st.success(f"✅ {name} registered successfully!")
-                st.image(Image.open(file_path), caption="Captured Face", width=300)
-            else:
-                st.error("Face not detected in image. Please try again.")
-        else:
-            st.warning("No image captured. Please try again.")
+if submitted:
+    if not all([name, matric_no, department]):
+        st.warning("Fill in all fields first.")
     else:
-        st.warning("Please fill all the fields before submitting.")
+        st.success("Now scan your face below and click ✅ Capture Face")
+
+# Live stream
+ctx = webrtc_streamer(
+    key="register",
+    video_transformer_factory=FaceCapture,
+    media_stream_constraints={"video": True, "audio": False}
+)
+
+if ctx.video_transformer and submitted:
+    if st.button("✅ Capture Face"):
+        frame = ctx.video_transformer.frame
+        if frame is not None:
+            filename = f"{uuid.uuid4().hex}.jpg"
+            filepath = os.path.join(FACES_DIR, filename)
+            Image.fromarray(frame).save(filepath)
+
+            emb = get_face_embedding(filepath)
+            if emb is not None:
+                register_student(name, matric_no, department, filepath, emb.tolist())
+                st.image(Image.open(filepath), caption="Captured Face", width=300)
+                st.success("🎉 Student registered and face saved!")
+            else:
+                st.error("⚠️ Face not detected. Try again.")
+
