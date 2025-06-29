@@ -1,0 +1,8 @@
+streamlit
+opencv-python
+numpy
+pandas
+facenet-pytorch
+streamlit-webrtc
+scipy
+pillow
