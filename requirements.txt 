@@ -1,20 +1,11 @@
-# requirements.txt
-
-# Core dependencies
-streamlit>=1.24.0,<2.0.0
-streamlit-webrtc>=0.44.0,<1.0.0
-opencv-python-headless>=4.7.0,<5.0.0
-numpy>=1.21.0,<2.0.0
-pandas>=1.5.0,<2.0.0
-Pillow>=9.0.0,<10.0.0
-scipy>=1.7.0,<2.0.0
-plotly>=5.13.0,<6.0.0
-
-# Face recognition dependencies
-torch>=1.13.0,<2.0.0
-torchvision>=0.14.0,<1.0.0
-facenet-pytorch>=2.5.2,<3.0.0
-
-# Additional utilities
-python-multipart>=0.0.5
-typing-extensions>=4.0.0
+streamlit==1.31.0
+streamlit-webrtc==0.47.1
+opencv-python-headless==4.8.1.78
+numpy==1.24.3
+pandas==2.0.3
+Pillow==10.0.0
+facenet-pytorch==2.5.3
+torch==2.0.1
+scipy==1.10.1
+plotly==5.18.0
+python-multipart==0.0.6
