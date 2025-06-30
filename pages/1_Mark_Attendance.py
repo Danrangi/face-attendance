@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import av
 import numpy as np
+import pandas as pd  # Added missing import
 from PIL import Image
 import json
 from scipy.spatial.distance import cosine
@@ -18,10 +19,14 @@ logger = logging.getLogger(__name__)
 # Initialize session state
 if 'last_attendance_time' not in st.session_state:
     st.session_state.last_attendance_time = None
+if 'retry_count' not in st.session_state:
+    st.session_state.retry_count = 0
 
 class FaceScan(VideoTransformerBase):
     def __init__(self):
         self.frame = None
+        self.face_detected = False
+        self.detection_confidence = 0.0
 
     def transform(self, frame: av.VideoFrame) -> np.ndarray:
         img = frame.to_ndarray(format="bgr24")
@@ -89,6 +94,10 @@ def main():
     )
 
     if ctx.video_transformer:
+        # Show face detection status
+        if hasattr(ctx.video_transformer, 'face_detected') and ctx.video_transformer.face_detected:
+            st.info("Face detected! You can mark attendance now.")
+        
         if st.button("✅ Scan Face and Mark Attendance"):
             if not check_attendance_cooldown():
                 return
@@ -102,7 +111,11 @@ def main():
                 # Get face embedding
                 emb = get_face_embedding(frame)
                 if emb is None:
+                    st.session_state.retry_count += 1
                     st.error("⚠️ No face detected. Please ensure your face is clearly visible.")
+                    if st.session_state.retry_count >= 3:
+                        st.error("Multiple failed attempts. Please check lighting and face position.")
+                        st.session_state.retry_count = 0
                     return
 
                 # Find matching student
@@ -118,14 +131,23 @@ def main():
                         st.success(f"✅ Welcome {name}! Attendance marked successfully.")
                         st.image(matched_student["Image Path"], caption="Registered Face", width=300)
                         st.session_state.last_attendance_time = datetime.now()
+                        st.session_state.retry_count = 0
                     else:
                         st.error(message)
                 else:
+                    st.session_state.retry_count += 1
                     st.error(f"❌ No match found. Closest match score: {distance:.4f}")
+                    if st.session_state.retry_count >= 3:
+                        st.error("Multiple failed attempts. Please try again later.")
+                        st.session_state.retry_count = 0
 
             except Exception as e:
                 logger.error(f"Error during attendance marking: {str(e)}")
                 st.error("An unexpected error occurred. Please try again.")
+
+        # Show retry count if there have been failures
+        if st.session_state.retry_count > 0:
+            st.warning(f"Failed attempts: {st.session_state.retry_count}/3")
 
 if __name__ == "__main__":
     main()
