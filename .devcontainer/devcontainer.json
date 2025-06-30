@@ -8,13 +8,10 @@
         "vscode": {
             "extensions": [
                 "ms-python.python",
-                "ms-python.vscode-pylance",
-                "ms-toolsai.jupyter"
+                "ms-python.vscode-pylance"
             ]
         }
     },
-    "postCreateCommand": "pip3 install --user -r requirements.txt",
-    "forwardPorts": [8501],
-    "postStartCommand": "sudo apt-get update && sudo apt-get install -y $(cat packages.txt)",
-    "remoteUser": "vscode"
+    "postCreateCommand": "apt-get update && apt-get install -y python3-dev build-essential libgl1-mesa-glx libglib2.0-0 && pip3 install -r requirements.txt",
+    "forwardPorts": [8501]
 }
